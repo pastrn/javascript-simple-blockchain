@@ -1,7 +1,7 @@
 const express = require("express");
 const bodyParser = require("body-parser");
 const Blockchain = require("../chain/blockchain")
-const { v4: uuidv4 } = require('uuid');
+const { v4: uuidv4 } = require("uuid");
 const chain = new Blockchain();
 const port = process.argv[2];
 const rp = require("request-promise");
@@ -20,33 +20,98 @@ app.get("/blockchain", (req, res) => {
 })
 
 app.post("/transaction", (req, res) => {
-    const blockIndex = chain.createNewTransaction(
-        req.body.amount,
-        req.body.sender,
-        req.body.recepient);
-    res.json({ note: `Transaction will be added to the block ${blockIndex}` });
-
+    const newTransaction = req.body;
+    const blockIndex = chain.addTransactionToPendingTransactions(newTransaction);
+    res.json({ note: `Transaction will be added in block ${blockIndex}` })
 })
 
-app.get("/mine", (req, res) => {
-    const lastBlock = chain.getLastBlock();
-    const previousBlockHash = lastBlock["hash"]
-    const currentBlockData = {
-        transactions: chain.pendingTransactions,
-        number: lastBlock["number"] + 1
-    }
-
-    const nonce = chain.proofOfWork(previousBlockHash, currentBlockData);
-    const blockHash = chain.hashBlock(previousBlockHash, currentBlockData, nonce);
-
-    chain.createNewTransaction(322, "00", nodeAddress)
-
-    const newBlock = chain.createNewBlock(nonce, previousBlockHash, blockHash);
-    res.json({
-        note: "New block mined successfully",
-        block: newBlock
+app.post("/transaction/broadcast", (req, res) => {
+    const newTransaction = chain.createNewTransaction(req.body.amount, req.body.sender, req.body.recepient);
+    chain.addTransactionToPendingTransactions(newTransaction);
+    const requestPromises = [];
+    chain.networkNodes.forEach(networkNodeUrl => {
+        const requestOptions = {
+            uri: networkNodeUrl + "/transaction",
+            method: "POST",
+            body: newTransaction,
+            json: true
+        }
+        requestPromises.push(rp(requestOptions));
+    })
+    Promise.all(requestPromises)
+    .then(data => {
+        res.json({ note: "Transaction created and broadcasted" })
     })
 })
+
+// mine a block
+app.get("/mine", function(req, res) {
+	const lastBlock = chain.getLastBlock();
+	const previousBlockHash = lastBlock["hash"];
+	const currentBlockData = {
+		transactions: chain.pendingTransactions,
+		number: lastBlock["number"] + 1
+	};
+	const nonce = chain.proofOfWork(previousBlockHash, currentBlockData);
+	const blockHash = chain.hashBlock(previousBlockHash, currentBlockData, nonce);
+	const newBlock = chain.createNewBlock(nonce, previousBlockHash, blockHash);
+
+	const requestPromises = [];
+	chain.networkNodes.forEach(networkNodeUrl => {
+		const requestOptions = {
+			uri: networkNodeUrl + "/receive-new-block",
+			method: "POST",
+			body: { newBlock: newBlock },
+			json: true
+		};
+
+		requestPromises.push(rp(requestOptions));
+	});
+
+	Promise.all(requestPromises)
+	.then(data => {
+		const requestOptions = {
+			uri: chain.currentNodeUrl + "/transaction/broadcast",
+			method: "POST",
+			body: {
+				amount: 322,
+				sender: "00",
+				recepient: nodeAddress
+			},
+			json: true
+		};
+
+		return rp(requestOptions);
+	})
+	.then(data => {
+		res.json({
+			note: "New block mined successfully",
+			block: newBlock
+		});
+	});
+});
+
+// receive new block
+app.post("/receive-new-block", function(req, res) {
+	const newBlock = req.body.newBlock;
+	const lastBlock = chain.getLastBlock();
+	const correctHash = lastBlock.hash === newBlock.previousBlockHash; 
+	const correctIndex = lastBlock["number"] + 1 === newBlock["number"];
+
+	if (correctHash && correctIndex) {
+		chain.chain.push(newBlock);
+		chain.pendingTransactions = [];
+		res.json({
+			note: "New block received and accepted.",
+			newBlock: newBlock
+		});
+	} else {
+		res.json({
+			note: "New block rejected.",
+			newBlock: newBlock
+		});
+	}
+});
 
 //register a node and broadcast it to the network
 app.post("/register-and-broadcast-node", (req, res) => {
