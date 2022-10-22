@@ -39,78 +39,78 @@ app.post("/transaction/broadcast", (req, res) => {
         requestPromises.push(rp(requestOptions));
     })
     Promise.all(requestPromises)
-    .then(data => {
-        res.json({ note: "Transaction created and broadcasted" })
-    })
+        .then(data => {
+            res.json({ note: "Transaction created and broadcasted" })
+        })
 })
 
 // mine a block
-app.get("/mine", function(req, res) {
-	const lastBlock = chain.getLastBlock();
-	const previousBlockHash = lastBlock["hash"];
-	const currentBlockData = {
-		transactions: chain.pendingTransactions,
-		number: lastBlock["number"] + 1
-	};
-	const nonce = chain.proofOfWork(previousBlockHash, currentBlockData);
-	const blockHash = chain.hashBlock(previousBlockHash, currentBlockData, nonce);
-	const newBlock = chain.createNewBlock(nonce, previousBlockHash, blockHash);
+app.get("/mine", function (req, res) {
+    const lastBlock = chain.getLastBlock();
+    const previousBlockHash = lastBlock["hash"];
+    const currentBlockData = {
+        transactions: chain.pendingTransactions,
+        number: lastBlock["number"] + 1
+    };
+    const nonce = chain.proofOfWork(previousBlockHash, currentBlockData);
+    const blockHash = chain.hashBlock(previousBlockHash, currentBlockData, nonce);
+    const newBlock = chain.createNewBlock(nonce, previousBlockHash, blockHash);
 
-	const requestPromises = [];
-	chain.networkNodes.forEach(networkNodeUrl => {
-		const requestOptions = {
-			uri: networkNodeUrl + "/receive-new-block",
-			method: "POST",
-			body: { newBlock: newBlock },
-			json: true
-		};
+    const requestPromises = [];
+    chain.networkNodes.forEach(networkNodeUrl => {
+        const requestOptions = {
+            uri: networkNodeUrl + "/receive-new-block",
+            method: "POST",
+            body: { newBlock: newBlock },
+            json: true
+        };
 
-		requestPromises.push(rp(requestOptions));
-	});
+        requestPromises.push(rp(requestOptions));
+    });
 
-	Promise.all(requestPromises)
-	.then(data => {
-		const requestOptions = {
-			uri: chain.currentNodeUrl + "/transaction/broadcast",
-			method: "POST",
-			body: {
-				amount: 322,
-				sender: "00",
-				recepient: nodeAddress
-			},
-			json: true
-		};
+    Promise.all(requestPromises)
+        .then(data => {
+            const requestOptions = {
+                uri: chain.currentNodeUrl + "/transaction/broadcast",
+                method: "POST",
+                body: {
+                    amount: 322,
+                    sender: "00",
+                    recepient: nodeAddress
+                },
+                json: true
+            };
 
-		return rp(requestOptions);
-	})
-	.then(data => {
-		res.json({
-			note: "New block mined successfully",
-			block: newBlock
-		});
-	});
+            return rp(requestOptions);
+        })
+        .then(data => {
+            res.json({
+                note: "New block mined successfully",
+                block: newBlock
+            });
+        });
 });
 
 // receive new block
-app.post("/receive-new-block", function(req, res) {
-	const newBlock = req.body.newBlock;
-	const lastBlock = chain.getLastBlock();
-	const correctHash = lastBlock.hash === newBlock.previousBlockHash; 
-	const correctIndex = lastBlock["number"] + 1 === newBlock["number"];
+app.post("/receive-new-block", function (req, res) {
+    const newBlock = req.body.newBlock;
+    const lastBlock = chain.getLastBlock();
+    const correctHash = lastBlock.hash === newBlock.previousBlockHash;
+    const correctIndex = lastBlock["number"] + 1 === newBlock["number"];
 
-	if (correctHash && correctIndex) {
-		chain.chain.push(newBlock);
-		chain.pendingTransactions = [];
-		res.json({
-			note: "New block received and accepted.",
-			newBlock: newBlock
-		});
-	} else {
-		res.json({
-			note: "New block rejected.",
-			newBlock: newBlock
-		});
-	}
+    if (correctHash && correctIndex) {
+        chain.chain.push(newBlock);
+        chain.pendingTransactions = [];
+        res.json({
+            note: "New block received and accepted.",
+            newBlock: newBlock
+        });
+    } else {
+        res.json({
+            note: "New block rejected.",
+            newBlock: newBlock
+        });
+    }
 });
 
 //register a node and broadcast it to the network
@@ -164,6 +164,51 @@ app.post("/register-nodes-bulk", (req, res) => {
 
     res.json({ note: "Bulk registration successful" });
 })
+
+app.get("/consensus", function (req, res) {
+    const requestPromises = [];
+    chain.networkNodes.forEach(networkNodeUrl => {
+        const requestOptions = {
+            uri: networkNodeUrl + "/blockchain",
+            method: "GET",
+            json: true
+        };
+
+        requestPromises.push(rp(requestOptions));
+    });
+
+    Promise.all(requestPromises)
+        .then(blockchains => {
+            const currentChainLength = chain.chain.length;
+            let maxChainLength = currentChainLength;
+            let newLongestChain = null;
+            let newPendingTransactions = null;
+
+            blockchains.forEach(blockchain => {
+                if (blockchain.chain.length > maxChainLength) {
+                    maxChainLength = blockchain.chain.length;
+                    newLongestChain = blockchain.chain;
+                    newPendingTransactions = blockchain.pendingTransactions;
+                };
+            });
+
+
+            if (!newLongestChain || (newLongestChain && !chain.chainIsValid(newLongestChain))) {
+                res.json({
+                    note: "Current chain has not been replaced.",
+                    chain: chain.chain
+                });
+            }
+            else {
+                chain.chain = newLongestChain;
+                chain.pendingTransactions = newPendingTransactions;
+                res.json({
+                    note: "This chain has been replaced.",
+                    chain: chain.chain
+                });
+            }
+        });
+});
 
 app.listen(port, () => {
     console.log(`Listening on port ${port}`)
