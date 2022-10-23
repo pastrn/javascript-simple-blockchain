@@ -8,22 +8,25 @@ const rp = require("request-promise");
 const path = require("path")
 const app = express();
 
+//get current bode address
 const nodeAddress = uuidv4().split("-").join("")
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
 
-
+//returns whole blockchain
 app.get("/blockchain", (req, res) => {
     res.send(chain)
 })
 
+//creates new transaction
 app.post("/transaction", (req, res) => {
     const newTransaction = req.body;
     const blockIndex = chain.addTransactionToPendingTransactions(newTransaction);
     res.json({ note: `Transaction will be added in block ${blockIndex}` })
 })
 
+//create and broadcast new transaction
 app.post("/transaction/broadcast", (req, res) => {
     const newTransaction = chain.createNewTransaction(req.body.amount, req.body.sender, req.body.recepient);
     chain.addTransactionToPendingTransactions(newTransaction);
@@ -164,6 +167,7 @@ app.post("/register-nodes-bulk", (req, res) => {
     res.json({ note: "Bulk registration successful" });
 })
 
+//reach consensus
 app.get("/consensus", (req, res) => {
     const requestPromises = [];
     chain.networkNodes.forEach(networkNodeUrl => {
@@ -209,6 +213,7 @@ app.get("/consensus", (req, res) => {
         });
 });
 
+//get block by its hash
 app.get("/block/:blockHash", (req, res) => {
     const blockHash = req.params.blockHash;
     const correctBlock = chain.getBlock(blockHash);
@@ -217,6 +222,7 @@ app.get("/block/:blockHash", (req, res) => {
     })
 })
 
+//get transaction by id
 app.get("/transaction/:transactionId", (req, res) => {
     const transactionId = req.params.transactionId;
     const transactionData = chain.getTransaction(transactionId);
@@ -226,6 +232,7 @@ app.get("/transaction/:transactionId", (req, res) => {
     })
 })
 
+//get address info
 app.get("/address/:address", (req, res) => {
     const address = req.params.address;
     const addressData = chain.getAddressData(address);
@@ -234,6 +241,8 @@ app.get("/address/:address", (req, res) => {
     })
 })
 
+
+//get explorer
 app.get("/block-explorer", (req, res) => {
     res.sendFile(path.resolve("./explorer/index.html")) 
 })
