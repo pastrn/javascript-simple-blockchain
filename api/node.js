@@ -5,8 +5,7 @@ const { v4: uuidv4 } = require("uuid");
 const chain = new Blockchain();
 const port = process.argv[2];
 const rp = require("request-promise");
-const req = require("express/lib/request");
-const res = require("express/lib/response");
+const path = require("path")
 const app = express();
 
 const nodeAddress = uuidv4().split("-").join("")
@@ -165,7 +164,7 @@ app.post("/register-nodes-bulk", (req, res) => {
     res.json({ note: "Bulk registration successful" });
 })
 
-app.get("/consensus", function (req, res) {
+app.get("/consensus", (req, res) => {
     const requestPromises = [];
     chain.networkNodes.forEach(networkNodeUrl => {
         const requestOptions = {
@@ -209,6 +208,35 @@ app.get("/consensus", function (req, res) {
             }
         });
 });
+
+app.get("/block/:blockHash", (req, res) => {
+    const blockHash = req.params.blockHash;
+    const correctBlock = chain.getBlock(blockHash);
+    res.json({
+        block: correctBlock
+    })
+})
+
+app.get("/transaction/:transactionId", (req, res) => {
+    const transactionId = req.params.transactionId;
+    const transactionData = chain.getTransaction(transactionId);
+    res.json({
+        transaction: transactionData.transaction,
+        block: transactionData.block
+    })
+})
+
+app.get("/address/:address", (req, res) => {
+    const address = req.params.address;
+    const addressData = chain.getAddressData(address);
+    res.json({
+        addressData: addressData
+    })
+})
+
+app.get("/block-explorer", (req, res) => {
+    res.sendFile(path.resolve("./explorer/index.html")) 
+})
 
 app.listen(port, () => {
     console.log(`Listening on port ${port}`)
